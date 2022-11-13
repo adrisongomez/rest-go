@@ -14,7 +14,6 @@ type HomeResponse struct {
 
 func HomeHandler(server server.Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(HomeResponse{
 			Message: "Welcome to my shitty golang program",

@@ -3,15 +3,13 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/adrisongomez/project-go/models"
 	"github.com/adrisongomez/project-go/repository"
 	"github.com/adrisongomez/project-go/server"
-	"github.com/golang-jwt/jwt"
+	"github.com/adrisongomez/project-go/utils"
 	"github.com/lib/pq"
 	"github.com/segmentio/ksuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -23,7 +21,7 @@ type SignUpAndLoginRequest struct {
 	Password string `json:"password"`
 }
 
-type SignUpResponse struct {
+type SignUpAndMeResponse struct {
 	Id    string `json:"id"`
 	Email string `json:"email"`
 }
@@ -41,7 +39,7 @@ func SignUpHandler(s server.Server) http.HandlerFunc {
 			return
 		}
 
-		hashedPassword, error := bcrypt.GenerateFromPassword([]byte(request.Password), HASH_COST)
+		hashedPassword, error := utils.HashText(request.Password)
 		if error != nil {
 			http.Error(w, "Error can be processed", http.StatusInternalServerError)
 		}
@@ -54,7 +52,7 @@ func SignUpHandler(s server.Server) http.HandlerFunc {
 
 		var user = models.User{
 			Email:    request.Email,
-			Password: string(hashedPassword),
+			Password: *hashedPassword,
 			Id:       id.String(),
 		}
 
@@ -74,8 +72,7 @@ func SignUpHandler(s server.Server) http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(SignUpResponse{
+		json.NewEncoder(w).Encode(SignUpAndMeResponse{
 			Id:    user.Id,
 			Email: user.Email,
 		})
@@ -103,28 +100,29 @@ func LoginHandler(s server.Server) http.HandlerFunc {
 			return
 		}
 
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(request.Password)); err != nil {
+		if !utils.ValidateHash(user.Password, request.Password) {
 			http.Error(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 
-		claims := models.AppClaims{
-			UserId: user.Id,
-			StandardClaims: jwt.StandardClaims{
-				ExpiresAt: time.Now().Add(2 * time.Hour * 24).Unix(),
-			},
-		}
-
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, err := token.SignedString([]byte(s.Config().JwtSecret))
+		tokenString, err := utils.GenerateToken(user, s.Config().JwtSecret)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LoginResponse{
 			Token: tokenString,
+		})
+
+	}
+}
+
+func MeHandler(s server.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := r.Context().Value(utils.USER_KEY).(*models.User)
+		json.NewEncoder(w).Encode(SignUpAndMeResponse{
+			Id:    user.Id,
+			Email: user.Email,
 		})
 
 	}
